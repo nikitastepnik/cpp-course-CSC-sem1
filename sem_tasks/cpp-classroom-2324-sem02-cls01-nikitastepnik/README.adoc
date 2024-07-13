@@ -1,0 +1,303 @@
+= Семинар I
+:icons: font
+:table-caption!:
+:example-caption!:
+:source-highlighter: highlightjs
+:revealjs_hash: true
+:customcss: https://rawcdn.githack.com/fedochet/asciidoc-revealjs-online-converter/7012d6dd12132363bbec8ba4800272ceb6d0a3e6/asciidoc_revealjs_custom_style.css
+:revealjs_theme: white
+:highlightjs-theme: https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@8.2/build/styles/tomorrow.min.css
+:stylesheet: main.css
+:toc:
+:toclevels: 4
+
+== Rules
+
+=== Структура Семинара
+
+* base: пара после лекции
+* advanced: время после пары base
+** опциональная
+
+=== Дорешки
+
+* на каждой: N задач (N≈3) => 3 балла максимум
+* зеленый CI необходим для сдачи задачи (и ревью)
+
+=== Ревью
+
+* смотрим часть задач (в каждой дорешке ≈ 1 шт; "крупная")
+* необходимо исправить замечания, чтобы зачесть задачу
+** _попробуем делать_
+** _возможно_: только у части студентов (< трети потока)
+
+=== Контрольные
+
+* работа на 2 пары
+* 3 шт за семестр
+* с оценкой по пятибалльной шкале + штрафами (не исправляются, в отличии от дорешек)
+
+== Exceptions
+
+=== usage
+
+Исключения в плюсах:
+
+* `throw` — способ сигнализировать о критической ситуации
+* `catch` — ее обработка [и возможное продолжение выполнения]
+** `throw` без `catch` => ?
+** _не стройте "логику if-ов" на них_
+
+=== catching
+
+Что здесь не так?
+
+[source, cpp]
+----
+try {
+    /* ... */
+} catch (std::exception e) {
+    /* ... */
+} catch (specific_exception e) {
+    /* ... */
+}
+----
+
+ifdef::backend-revealjs[=== !]
+
+* перехват — надо принимать по ссылке
+* порядок catch-блоков важен
+
+[source, cpp]
+----
+try {
+    /* ... */
+} catch (const specific_exception& e) {
+    /* ... */
+} catch (const std::exception& e) {
+    /* ... */
+}
+----
+
+=== stack unwinding + RAII
+
+* хорошо: unwinding делает подчистку локальных объектов (деструкторы)
+** если при этом сам деструктор бросает исключение?
+
+[source, cpp]
+----
+void f();
+
+int main() {
+    try {
+        // "compare and contrast"
+        int *p = new int{42};
+        std::unique_ptr<int> p1 = new int{24};
+        
+        f();
+    } catch (...) { /* ... */ }
+}
+----
+
+== https://en.cppreference.com/w/cpp/language/noexcept_spec[noexcept specifier]
+
+* часть сигнатуры метода/функции — декларирует поведение:
+** `non-throwing` или `potentially throwing`
+* если пропущен => `noexcept(false)` (почти всегда)
+** NB: иногда не так, см. деструкторы, автосгенерированные методы
+
+=== формы noexcept
+
+[source, cpp]
+----
+template <typename T>
+struct Class {
+    void foo() noexcept;
+    void bar() noexcept(is_something_able_v<T> /* || true */ );
+    void baz() /* noexcept отсутствует */;
+
+    ~Class();  // ?
+};
+----
+
+=== про значение
+
+* можно ли кидать исключение внутри noexcept-метода?
+* на что влияет модификатор?
+** https://godbolt.org/z/7qWE18Gqb[godbolt]
+
+== механика работы исключений [*]
+
+* статья про abi: https://monkeywritescode.blogspot.com/p/c-exceptions-under-hood.html[C++ exceptions under the hood]
+
+== hierarchy
+
+Есть ли в коде ошибки?
+
+[source, cpp]
+----
+struct io_exception : std::exception { /* ... */ };
+struct invalid_input_exception : std::exception {/* ... */};
+struct invalid_file_content_exception
+    : io_exception, invalid_input_exception {/* ... */};
+
+int main() {
+    try {
+        throw invalid_file_content_exception();
+    } catch (std::exception& e) { /* ... */ }
+}
+----
+
+ifdef::backend-revealjs[=== !]
+
+* diamond error
+** пример, когда актуально ромбовидное наследование!
+* fix: virtual inheritance, https://godbolt.org/z/M3YMrerdf[godbolt]
+
+=== store + reuse exceptions
+
+* https://en.cppreference.com/w/cpp/error/exception_ptr[std::exception_ptr] — shared-like object
+* https://en.cppreference.com/w/cpp/error/current_exception[std::current_exception]
+* https://en.cppreference.com/w/cpp/error/rethrow_exception[std::rethrow_exception]
+
+== exception safety
+
+=== levels
+
+* exception safety — свойство функции/метода, про поведение в случае исключительной ситуации
+** no exception safety
+** basic
+** strong
+** no-throw
+
+=== в STL
+
+Для реализаций из STL: дается гарантия basic+
+
+* некоторые требования обязательны, например: noexcept dtor у `T` для `std::vector<T>`
+* noexcept у `T::some_method` часто повышают exception safety level какого-то метода/функции в шаблоне
+** _в т.ч. чуть позже посмотрим на vector::erase_
+
+=== примеры методов: vector
+
+Поп элемента — почему такой?
+
+[source, cpp]
+----
+void foo(std::vector<T>& v) {
+    T value = v.back();
+    v.pop_back();
+}
+----
+
+=== примеры методов: vector [x2]
+
+* `vector<T>::push_back` обеспечивает strong exception safety (для произвольного T, подходящего для вектора)
+* => https://en.cppreference.com/w/cpp/types/is_move_constructible[`is_nothrow_move_constructible_v<T>`] напрямую влияет на быстродействие метода — _как?_
+** есть хелпер https://en.cppreference.com/w/cpp/utility/move_if_noexcept[std::move_if_noexcept] — заиспользуйте его в дорешке
+
+=== примеры методов: optional
+
+* если `std::is_nothrow_move_constructible_v<T>`
+** => strong (вместо basic)  exception safety будет у https://en.cppreference.com/w/cpp/utility/optional/emplace#Exceptions[`std::optional<T>::emplace`]
+
+[source, cpp]
+----
+template<typename... Args>
+T& std::optional<T>::emplace(Args&&... args) {
+    T newObj{std::forward<Args>(args)...}; // might throw, but that's Ok
+
+    if (has_value()) { destroy() };  // prev state lost
+
+    new (ptr()) T{std::move{newObj}} // => if throws, object will be empty
+}
+----
+
+=== примеры методов: variant
+
+* `std::variant<T, ...>` — класс в STL задизайнен так, чтобы все время хранить _какое-либо_ значение из `T, ...` (нет пустого состояния)
+** но, в случае ошибок — может стать https://en.cppreference.com/w/cpp/utility/variant/valueless_by_exception[`valueless_by_exception`]
+** идея хранения та же: один буффер под все типы `T, ...`
+** корень проблемы тот же: удаление, затем неуспешное создание
+
+
+== Задачи
+
+* все в пространстве имен `cls01`
+* не забывайте про модификаторы `const`, `noexcept` !
+
+
+== Worker
+
+* выполнятор функции с фичами:
+** отложенный запуск (по методу `run()`) + запрос статуса по `called()`
+** хранение результата (или `T` или `std::exception_ptr`; используйте `std::variant` +  https://en.cppreference.com/w/cpp/utility/variant/monostate[`std::monostate`])
+** узнать тип результата (по `exception_caught()`)
+** получение результата ( `get()` )
+** перехват + получение исключения ( `get_exception()` )
+** вызов получения результата (`get*()`) перед `run()` -> кидайте свое исключение `not_called_exception`
+
+ifdef::backend-revealjs[=== !]
+
+[source, cpp]
+----
+int foo() { retunr 42; }
+
+void test() {
+    cls01::worker<int> w(foo);
+    w.run();
+    assert(w.called());
+    assert(!w.exception_caught());
+    assert(w.get() == 42);
+}
+----
+
+ifdef::backend-revealjs[=== !]
+
+* Для проверки значения внутри variant идиоматично использовать
+https://en.cppreference.com/w/cpp/utility/variant/visit[std::visit]
+* Выразите логику визитера через лямбду (принимающую `const auto& result`)
+
+
+== Methods in vector
+
+* Есть заготовка вектора — надо дописать недостающих методов
+** с обеспечением наибольшей гарантии безопасности исключений
+** с правильными noexcept-модификаторами
+* _Заиспользуйте_ https://en.cppreference.com/w/cpp/utility/move_if_noexcept[`std::move_if_noexcept`]
+* Отступление: для `push_back` правильно ставить `noexcept(false)` (т.к. внутри
+есть аллокация памяти => возможен `std::bad_alloc`). Давайте *проигнорируем* этот
+случай: выставим модификатор в предположении, что `operator new` (_для аллокации_)
+не кидает исключений
+
+
+== Логгер
+Хотим написать фабрику логирующих функций
+
+[source, cpp]
+----
+template<class UnaryFunction>
+decltype(auto) logging_wrapper(UnaryFunction&& f, const std::string& log_before,
+  const std::string& log_after);
+----
+
+ifdef::backend-revealjs[=== !]
+
+Логирующая функция, созданная фабрикой, должна:
+
+* вызывать переданную в фабрику функцию от одного аргумента
+** возвращать то, что она возвращает!
+* в stdout вывести:
+** перед вызовом — строку `log_before`
+** после — `log_after`
+
+Подробности использования смотрите в тестах
+
+ifdef::backend-revealjs[=== !]
+
+* выполните задание с использованием лямбды
+* для поддержки случаев "есть/нет возвращаемое значение" можно воспользоваться if constexpr
+
+== кодим vector::erase [*]
+
+* _если успеем_
