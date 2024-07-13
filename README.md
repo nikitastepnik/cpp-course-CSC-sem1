@@ -1,2 +1,2 @@
-# cpp-course-CSC-sem1-
+# C++ course | CSCxITMO
 Homeworks of course C++ | CSCxITMO [sem1]
