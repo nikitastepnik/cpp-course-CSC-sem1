@@ -1,0 +1,14 @@
+{
+  "tests": [
+    {
+      "name": "smoke",
+      "setup": "",
+      "run": "cmake . && make smoke_test && ./smoke_test",
+      "input": "",
+      "output": "",
+      "comparison": "exact",
+      "timeout": 2,
+      "points": null
+    }
+  ]
+}
