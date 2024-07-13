@@ -1,0 +1,192 @@
+= Семинар V: классы
+:icons: font
+:table-caption!:
+:example-caption!:
+:source-highlighter: highlightjs
+:revealjs_hash: true
+:customcss: https://rawcdn.githack.com/fedochet/asciidoc-revealjs-online-converter/7012d6dd12132363bbec8ba4800272ceb6d0a3e6/asciidoc_revealjs_custom_style.css
+:revealjs_theme: white
+:highlightjs-theme: https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@8.2/build/styles/tomorrow.min.css
+:stylesheet: main.css
+:toc:
+:toclevels: 4
+
+== struct Post + ООП
+
+[source, cpp]
+----
+struct Post;
+
+Post* create_post(char const* user, char const* text, Post* head);
+void destroy_posts(Post const* head);
+// ...
+Post* remove_by_content(Post* head, char const* content);
+// ...
+void set_text(Post* post, char const* new_text);
+----
+
+* функции похожи на методы:
+** есть аргумент `[const] Post*` (аналогично `this`)
+** действие выполняется над объектом-лентой (или _над объектом-постом_: лучше бы семантика методов была одинаковой)
+
+=== PostsList + Post + copy ctor
+
+* _попишем код в_ `./src/task_0`
+* базовая идея: лучше разделить логику ленты и поста
+* доп задача: реализуем копирование для `Post` (copy ctor + `operator=(const Post&)`)
+
+== https://en.cppreference.com/w/cpp/algorithm/swap[std::swap]
+
+* `std::swap<T>(a, b)` — меняет значения `a` и `b`
+* _как выглядит обобщенная реализация? для произвольного T_
+
+ifdef::backend-revealjs[=== !]
+
+* _обобщенная реализация std::swap<T>_
+** ответ можно понять из https://en.cppreference.com/w/cpp/algorithm/swap#Parameters[Type requirements]
+** NB: requirements — это ограничения на тип; CopyConstructible — _есть copy ctor (*)_, и т.д.
+* _как выглядит реализация лучше (для `Post`)?_
+** _напишем_
+
+=== swap trick
+
+[small]#идиома#
+
+* aka https://en.wikibooks.org/wiki/More_C%2B%2B_Idioms/Copy-and-swap[Copy-and-swap idiom]
+* идея: использовать создание временного значения + _конкретизированный_ swap
+** в реализации `T::operator=(const T&)`
+* плюсы: код короче + strong exception safety (при noexcept-swap) [*]
+** _поймем на примере в коде, когда оно есть/отсутствует_
+
+== дефолтные версии методов
+
+* рассмотрим методы `copy ctor`, `copy assign`, `dtor` `(#)`
+* _как выглядят методы, генерируемые компилятором?_
+** генерируемые неявно или через `Method() = default;`
+
+=== rules of N
+
+[small]#рекомендации к использованию методов#
+
+ifdef::backend-revealjs[=== !]
+
+* https://en.cppreference.com/w/cpp/language/rule_of_three[rule_of_three]
+** если для `T` определено что-либо из `(#)`
+** => почти наверное надо определять *все* из `(#)`
+*** (почему: скорее всего класс менеджерит что-то)
+
+ifdef::backend-revealjs[=== !]
+
+* [*]rule_of_five:
+** определенное что-либо из `(#)` выключает автогенерацию `move ctor`, `move assign` от компилятора (по стандарту)
+** => если нужна move-семантика, то надо самостоятельно доопределять эти методы
+** _[*] посмотрим на идею быстрой передачи_
+
+ifdef::backend-revealjs[=== !]
+
+* https://en.cppreference.com/w/cpp/language/rule_of_three#Rule_of_zero[rule_of_zero]
+* [line-through]#эээ, ну там это, SRP# кратко:
+ 1. классы с пользовательскими `(#)` — пусть отвечают за владение _какого-либо ресурса_ (одного)
+ 2. остальным классам лучше не переопределять ничего из `(#)`, а использовать типы из `1.`
+
+=== Post и владение ресурсами
+
+* _все ли хорошо с Post, PostsList?_
+
+== время жизни объекта + методы
+
+* когда объект создается — в т.ч. вызывается конструктор его типа
+* когда удаляется — в т. ч. вызывается деструктор
+* рассмотрим для local/global-переменных + объектов в куче
+* https://godbolt.org/z/3PonG8neK[godbolt]
+
+== Задачи
+
+== StringView
+Реализуйте класс `StringView`:
+
+* для элементов типа `char`
+* содержимое *необязательно* c-strings
+* объект *не хранит* данные самостоятельно, а все время "смотрит" на чьи-то
+  * => вызовы методов view валидны, пока жив основной объект-держатель данных
+* можно ориентироваться на std::string_view
+
+ifdef::backend-revealjs[=== !]
+
+Нужен `npos` и методы:
+
+1. конструкторы: от си-строки, от `std::string`, от `char* + size_t` (указатель на начало + размер)
+** `char* + size_t`: необязательно си-строка!
+2. операторы присваивания: от си-строки, от `std::string`, от `StringView`
+3. `data()`, `size()` (работающие за константу)
+4. `substr` — возвращает `StringView`, принимает стартовый индекс + опциональный конечный индекс (default: `npos`)
+
+ifdef::backend-revealjs[=== !]
+
+5. `operator[]` — достает соответствующий индексу элемент
+6. `find` — возвращает индекс начала подстроки или `npos`, принимает в аргументе `StringView` или `char`
+7. `startsWith`, `endsWith` — принимает в аргументе `StringView` или `char`
+8. `findFirstOf`, `findFirstNotOf` — _same_ + опциональный стартовый индекс (default: `0`)
+9. `removePrefix` — сдвигает начало на `size_t` (аргумент), в самом объекте stringView
+
+== LazyString
+Будем разрабатывать строку:
+
+* дешево копируемую (по сравнению с std::string)
+* с методами-модификаторами (по сравнению с std::string_view)
+  * => она *будет* хранить свои данные
+* интефейс будет напоминать std::string
+
+ifdef::backend-revealjs[=== !]
+
+Реализация — через парадигму Copy-on-Write:
+
+* данные в куче — и могут быть общими для нескольких объектов
+  * например, при копировании объекта-строки, пока они не меняются по ходу программы
+* при модификации объекта если владение данными у него не эксклюзивное => сперва копируются
+
+=== SharedBuffer *[0.5 балла]*
+
+Реализуйте класс `SharedBuffer`
+
+* `SharedBuffer` хранит в себе (в куче) массив char и его размер
+  * данные не обязательно null-terminated! точно известен их размер
+* несколько таких объектов могут ссылаться на один и тот же участок памяти
+* когда последний из них очищается, очищается и эта память
+
+ifdef::backend-revealjs[=== !]
+
+У `SharedBuffer` должны быть следующие методы:
+
+* Конструктор от size_t и конструктор копирования
+* Оператор присваивания
+* `getSize` — возвращает размер данных
+* `getData` — возвращает аллоцированный участок памяти (указатель на него)
+* `useCount` — возвращает количество объектов, разделяющих данные (за O(1))
+
+=== LazyString
+
+Реализуйте класс `LazyString` (используя `SharedBuffer`!) c такими методами:
+
+* Дефолтный конструктор
+* Неявный конструктор от `char const*` (т.е. си-строки в данных)
+* Конструктор копирования, оператор присваивания
+
+ifdef::backend-revealjs[=== !]
+
+* `getSize`
+* `cStr`
+* `useCount`
+* `at`, возвращающий символ по индексу (копию)
+** надо проверить индекс, если выход за границы — кидайте исключение [std::out_of_range](https://en.cppreference.com/w/cpp/error/out_of_range)
+* `operator==`, внешний `operator+`, `operator+=`
+
+=== CharWrapper *[0.5 балла]*
+Реализуйте `LazyString::operator[]`, возвращающий специальную обертку над символом строки
+
+* частично поддерживающую интерфейс `char&`: элемент можно сравнивать, присваивать, инкрементить
+* при этом если `useCount > 1`:
+** копирование строчки не происходит при read-only инструкциях (`s[2] == 'a'`)
+** а происходит только на изменении данных (`s[2] = 'a'`)
+
+ifdef::backend-revealjs[=== !]

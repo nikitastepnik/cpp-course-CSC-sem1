@@ -1,0 +1,15 @@
+{
+  "tests": [
+    {
+      "name": "smoke_task_1",
+      "setup": "",
+      "run": "cmake . && make task-1-test && ./task-1-test",
+      "input": "",
+      "output": "",
+      "comparison": "included",
+      "timeout": 10,
+      "points": null
+    }
+
+  ]
+}
